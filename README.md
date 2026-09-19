@@ -47,18 +47,19 @@ Or with your Twitter/X username as an argument:
 dotnet run -- yourusername
 ```
 
-### Step 2: Log in (First Time Only)
-
-1. The tool will automatically launch a Chromium browser window.
-2. If you are not logged in, it will pause and prompt you in the console to sign in to Twitter/X in the browser window.
-3. Once logged in, press **[Enter]** in the terminal to continue.
-4. Your login state is saved locally in `.browser-profile/`, so subsequent runs will proceed automatically without requiring login.
-
-### Step 3: Choose What to Delete
+### Step 2: Choose What to Delete
 
 The tool will prompt you to choose:
 1. **Posts** - Your original tweets
 2. **Replies** - Your replies to other tweets
+
+### Step 3: Log in (First Time Only)
+
+1. The tool will automatically launch a Chromium browser window.
+2. If you are not logged in, the browser will navigate to `https://x.com/login` and prompt you in the console to sign in.
+3. Sign in to your Twitter/X account in the opened browser window.
+4. The tool will **automatically detect** when you have finished logging in (via the session cookie) and proceed to delete your tweets.
+5. Your login session is saved in `.browser-profile/`, so subsequent runs will skip login entirely.
 
 The tool will then automatically:
 - Navigate to the selected section

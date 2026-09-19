@@ -81,30 +81,56 @@ var page = context.Pages.Count > 0 ? context.Pages[0] : await context.NewPageAsy
 // Check login status
 Console.WriteLine("\n🔍 Checking Twitter/X authentication status...");
 await page.GotoAsync("https://x.com/home", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-await page.WaitForTimeoutAsync(2500);
+await page.WaitForTimeoutAsync(2000);
 
-// Check if we need to log in
-bool isLoginRequired = page.Url.Contains("/login", StringComparison.OrdinalIgnoreCase) ||
-                       page.Url.Contains("/i/flow/login", StringComparison.OrdinalIgnoreCase);
+bool isLoggedIn = await IsLoggedInAsync(context);
 
-if (!isLoginRequired)
+if (!isLoggedIn)
 {
-    var loginButtonCount = await page.Locator("a[href='/login'], [data-testid='loginButton']").CountAsync();
-    var accountSwitcherCount = await page.Locator("[data-testid='SideNav_AccountSwitcher_Button'], [data-testid='AppTabBar_Profile_Link']").CountAsync();
-    if (loginButtonCount > 0 && accountSwitcherCount == 0)
+    Console.WriteLine("\n🔑 You are not logged in to Twitter/X.");
+    Console.WriteLine("👉 Please log in to your Twitter/X account in the opened Chromium window.");
+    Console.WriteLine("   (Waiting for login... The tool will auto-detect when you finish, or press [Enter] here)\n");
+
+    if (!page.Url.Contains("login", StringComparison.OrdinalIgnoreCase))
     {
-        isLoginRequired = true;
+        await page.GotoAsync("https://x.com/login", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
     }
-}
 
-if (isLoginRequired)
-{
-    Console.WriteLine("\n🔑 You are not logged in yet.");
-    Console.WriteLine("👉 Please log in to your Twitter/X account in the opened Chromium browser window.");
-    Console.WriteLine("   (Your login session will be saved in .browser-profile for future runs)");
-    Console.WriteLine("   Once you have completed logging in, press [Enter] here in the terminal to continue...");
-    Console.ReadLine();
+    var enterTask = Task.Run(() =>
+    {
+        try { return Console.ReadLine(); }
+        catch { return null; }
+    });
+    bool isStdinClosed = false;
 
+    while (!await IsLoggedInAsync(context))
+    {
+        if (!isStdinClosed && enterTask.IsCompleted)
+        {
+            var line = await enterTask;
+            if (line == null)
+            {
+                isStdinClosed = true;
+            }
+            else
+            {
+                await page.WaitForTimeoutAsync(1000);
+                if (await IsLoggedInAsync(context))
+                {
+                    break;
+                }
+                Console.WriteLine("⚠️ auth_token cookie not detected yet. Waiting for login in browser...");
+                enterTask = Task.Run(() =>
+                {
+                    try { return Console.ReadLine(); }
+                    catch { return null; }
+                });
+            }
+        }
+        await Task.Delay(1000);
+    }
+
+    Console.WriteLine("🎉 Login detected!");
     await page.WaitForTimeoutAsync(2000);
 }
 
@@ -120,7 +146,17 @@ const string CONFIRM_UNREPOST_SELECTOR = "[data-testid=\"unretweetConfirm\"]";
 // Navigate to selected section
 Console.WriteLine($"\n📍 Navigating to {sectionName}...");
 await page.GotoAsync(targetUrl, new() { WaitUntil = WaitUntilState.DOMContentLoaded });
-await page.WaitForTimeoutAsync(3000);
+
+// Wait for tweets to appear
+try
+{
+    await page.WaitForSelectorAsync(TWEET_SELECTOR, new() { Timeout = 8000 });
+}
+catch
+{
+    // Profile might take a bit to render or have no tweets yet
+}
+await page.WaitForTimeoutAsync(2000);
 
 Console.WriteLine($"\n🚀 Starting fully automatic deletion of {sectionName}...");
 Console.WriteLine("   Press Ctrl+C to stop at any time.\n");
@@ -362,4 +398,17 @@ async Task<(int deleted, int unreposted)> ProcessVisibleTweets(IPage page, int m
     }
 
     return (deletedCount, unrepostedCount);
+}
+
+async Task<bool> IsLoggedInAsync(IBrowserContext ctx)
+{
+    try
+    {
+        var cookies = await ctx.CookiesAsync();
+        return cookies.Any(c => c.Name == "auth_token" && !string.IsNullOrWhiteSpace(c.Value));
+    }
+    catch
+    {
+        return false;
+    }
 }
