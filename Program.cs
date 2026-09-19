@@ -40,49 +40,75 @@ string sectionName = choice switch
 Console.WriteLine($"\n✅ Selected: {sectionName}");
 Console.WriteLine($"   URL: {targetUrl}");
 
-// Initialize Playwright and connect to existing Chrome via CDP
-Console.WriteLine("\n🔌 Connecting to existing Chrome browser...");
-Console.WriteLine("   Make sure Chrome is running with: --remote-debugging-port=9222\n");
+// Initialize Playwright and launch Chromium with persistent profile
+var profileDir = Path.Combine(Directory.GetCurrentDirectory(), ".browser-profile");
+Directory.CreateDirectory(profileDir);
+
+Console.WriteLine("\n🌐 Launching Chromium browser...");
+Console.WriteLine($"📁 Profile directory: {profileDir}");
 
 using var playwright = await Playwright.CreateAsync();
 
-IBrowser browser;
+IBrowserContext context;
 try
 {
-    browser = await playwright.Chromium.ConnectOverCDPAsync("http://localhost:9222");
-    Console.WriteLine("✅ Connected to Chrome!");
+    context = await playwright.Chromium.LaunchPersistentContextAsync(profileDir, new BrowserTypeLaunchPersistentContextOptions
+    {
+        Headless = false,
+        Args = new[]
+        {
+            "--disable-blink-features=AutomationControlled",
+            "--no-sandbox"
+        },
+        ViewportSize = ViewportSize.NoViewport
+    });
+    Console.WriteLine("✅ Chromium launched successfully!");
 }
 catch (Exception ex)
 {
-    Console.WriteLine($"❌ Failed to connect to Chrome: {ex.Message}");
-    Console.WriteLine("\nTo start Chrome with remote debugging:");
-    Console.WriteLine("  Windows: chrome.exe --remote-debugging-port=9222");
+    Console.WriteLine($"❌ Failed to launch Chromium: {ex.Message}");
+    Console.WriteLine("\nMake sure Playwright browsers and OS dependencies are installed:");
+    Console.WriteLine("  Linux/macOS:");
+    Console.WriteLine("    pwsh bin/Debug/net10.0/playwright.ps1 install chromium");
+    Console.WriteLine("    pwsh bin/Debug/net10.0/playwright.ps1 install-deps chromium");
+    Console.WriteLine("  Windows PowerShell:");
+    Console.WriteLine("    powershell -ExecutionPolicy Bypass -File bin/Debug/net10.0/playwright.ps1 install chromium");
     return;
 }
 
-var contexts = browser.Contexts;
-if (contexts.Count == 0)
+var page = context.Pages.Count > 0 ? context.Pages[0] : await context.NewPageAsync();
+
+// Check login status
+Console.WriteLine("\n🔍 Checking Twitter/X authentication status...");
+await page.GotoAsync("https://x.com/home", new() { WaitUntil = WaitUntilState.DOMContentLoaded });
+await page.WaitForTimeoutAsync(2500);
+
+// Check if we need to log in
+bool isLoginRequired = page.Url.Contains("/login", StringComparison.OrdinalIgnoreCase) ||
+                       page.Url.Contains("/i/flow/login", StringComparison.OrdinalIgnoreCase);
+
+if (!isLoginRequired)
 {
-    Console.WriteLine("❌ No browser contexts found. Open a tab in Chrome first.");
-    return;
+    var loginButtonCount = await page.Locator("a[href='/login'], [data-testid='loginButton']").CountAsync();
+    var accountSwitcherCount = await page.Locator("[data-testid='SideNav_AccountSwitcher_Button'], [data-testid='AppTabBar_Profile_Link']").CountAsync();
+    if (loginButtonCount > 0 && accountSwitcherCount == 0)
+    {
+        isLoginRequired = true;
+    }
 }
 
-var context = contexts[0];
-var pages = context.Pages;
-
-Console.WriteLine($"📑 Found {pages.Count} open tab(s)");
-
-// Find a Twitter/X tab or use the first one
-var page = pages.FirstOrDefault(p => p.Url.Contains("x.com") || p.Url.Contains("twitter.com"));
-if (page == null)
+if (isLoginRequired)
 {
-    page = pages[0];
-    Console.WriteLine($"   No Twitter tab found, using: {page.Url}");
+    Console.WriteLine("\n🔑 You are not logged in yet.");
+    Console.WriteLine("👉 Please log in to your Twitter/X account in the opened Chromium browser window.");
+    Console.WriteLine("   (Your login session will be saved in .browser-profile for future runs)");
+    Console.WriteLine("   Once you have completed logging in, press [Enter] here in the terminal to continue...");
+    Console.ReadLine();
+
+    await page.WaitForTimeoutAsync(2000);
 }
-else
-{
-    Console.WriteLine($"   Using Twitter tab: {page.Url}");
-}
+
+Console.WriteLine("✅ Logged in successfully!");
 
 // Selectors
 const string TWEET_SELECTOR = "article[data-testid=\"tweet\"]";
@@ -164,6 +190,8 @@ Console.WriteLine($"   Total deleted:   {totalDeleted}");
 Console.WriteLine($"   Total unreposted: {totalUnreposted}");
 Console.WriteLine($"   Total processed: {totalDeleted + totalUnreposted}");
 Console.WriteLine(new string('=', 50));
+
+await context.CloseAsync();
 
 async Task<(int deleted, int unreposted)> ProcessVisibleTweets(IPage page, int maxCount)
 {

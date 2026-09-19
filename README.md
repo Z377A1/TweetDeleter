@@ -5,14 +5,15 @@ A .NET CLI tool that uses Playwright to delete tweets via UI interactions. This 
 ## Features
 
 - **UI-based deletion**: Uses Playwright to interact with Twitter/X exactly as a human would
-- **Connects to existing Chrome**: Uses Chrome DevTools Protocol (CDP) to connect to your already logged-in browser
+- **Direct Chromium launch with persistent session**: Automatically opens Chromium and keeps your session logged in across runs via `.browser-profile`
+- **Zero debug flags required**: No need to manually start external Chrome instances with remote debugging flags
 - **Automatic operation**: Continuously deletes tweets and reposts until none remain
 - **Safe operation**: Only deletes YOUR tweets (the delete option only appears for your own content)
 
 ## Prerequisites
 
-- .NET 9.0 SDK
-- Chrome browser installed
+- .NET 10.0 SDK
+- PowerShell / pwsh (to install Playwright browser binaries)
 
 ## Installation
 
@@ -21,61 +22,39 @@ A .NET CLI tool that uses Playwright to delete tweets via UI interactions. This 
    dotnet build
    ```
 
-2. Install Playwright browsers (first time only):
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File bin/Debug/net9.0/playwright.ps1 install chromium
-   ```
+2. Install Playwright Chromium browser and OS dependencies (first time only):
+   - **Linux / DevContainer / macOS:**
+     ```bash
+     pwsh bin/Debug/net10.0/playwright.ps1 install chromium
+     pwsh bin/Debug/net10.0/playwright.ps1 install-deps chromium
+     ```
+   - **Windows (PowerShell):**
+     ```powershell
+     powershell -ExecutionPolicy Bypass -File bin/Debug/net10.0/playwright.ps1 install chromium
+     ```
 
 ## Usage
 
-### Step 1: Start Chrome with Remote Debugging
-
-Close all Chrome windows, then start Chrome with the remote debugging port:
-
-**Windows (Command Prompt) - Isolated Instance:**
-```cmd
-set TMPDIR=%TEMP%\chrome-debug-%RANDOM%
-"C:\Program Files\Google\Chrome\Application\chrome.exe" ^
-  --remote-debugging-port=9222 ^
-  --no-first-run ^
-  --no-default-browser-check ^
-  --user-data-dir="%TMPDIR%"
-```
-
-**Windows (PowerShell) - Isolated Instance:**
-```powershell
-$tmpdir = "$env:TEMP\chrome-debug-$(Get-Random)"
-& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
-  --remote-debugging-port=9222 `
-  --no-first-run `
-  --no-default-browser-check `
-  --user-data-dir="$tmpdir"
-```
-
-**Simple (uses default profile):**
-```cmd
-"C:\Program Files\Google\Chrome\Application\chrome.exe" --remote-debugging-port=9222
-```
-
-> **Note:** Using `--user-data-dir` creates an isolated Chrome instance with a fresh profile. This avoids conflicts with your main Chrome profile and ensures a clean state for automation.
-
-### Step 2: Log in to Twitter/X
-
-In the Chrome window that opens, navigate to https://x.com and log in to your account.
-
-### Step 3: Run the Tool
+### Step 1: Run the Tool
 
 ```bash
 dotnet run
 ```
 
-Or with your username as an argument:
+Or with your Twitter/X username as an argument:
 
 ```bash
 dotnet run -- yourusername
 ```
 
-### Step 4: Choose What to Delete
+### Step 2: Log in (First Time Only)
+
+1. The tool will automatically launch a Chromium browser window.
+2. If you are not logged in, it will pause and prompt you in the console to sign in to Twitter/X in the browser window.
+3. Once logged in, press **[Enter]** in the terminal to continue.
+4. Your login state is saved locally in `.browser-profile/`, so subsequent runs will proceed automatically without requiring login.
+
+### Step 3: Choose What to Delete
 
 The tool will prompt you to choose:
 1. **Posts** - Your original tweets
@@ -90,8 +69,8 @@ The tool will then automatically:
 
 ## How It Works
 
-1. Connects to your existing Chrome browser via CDP on port 9222
-2. Finds a Twitter/X tab (or uses the first available tab)
+1. Launches Chromium with a persistent context stored in `.browser-profile/`
+2. Checks whether your Twitter/X account is authenticated; prompts for interactive login if needed
 3. Navigates to your profile's posts or replies section
 4. For each visible tweet:
    - If it's a repost → unrepost it
@@ -100,6 +79,7 @@ The tool will then automatically:
 5. Scrolls down to load more tweets
 6. Periodically refreshes the page to ensure fresh content
 7. Stops after 5 consecutive attempts with no deletions
+8. Flushes and saves session context upon completion
 
 ## Output
 
@@ -125,12 +105,14 @@ The following constants can be adjusted in `Program.cs`:
 
 ## Troubleshooting
 
-**"Failed to connect to Chrome"**
-- Make sure Chrome is running with `--remote-debugging-port=9222`
-- Close all other Chrome windows before starting with the debug flag
-
-**"No browser contexts found"**
-- Open at least one tab in Chrome before running the tool
+**"error while loading shared libraries: libnspr4.so: cannot open shared object file" or "Failed to launch Chromium"**
+- On Linux / DevContainers, install the required native system dependencies:
+  ```bash
+  pwsh bin/Debug/net10.0/playwright.ps1 install-deps chromium
+  ```
+- Make sure the Chromium binary itself is installed:
+  - Linux/macOS: `pwsh bin/Debug/net10.0/playwright.ps1 install chromium`
+  - Windows: `powershell -ExecutionPolicy Bypass -File bin/Debug/net10.0/playwright.ps1 install chromium`
 
 **"No delete option"**
 - You're viewing someone else's tweet
@@ -142,10 +124,10 @@ The following constants can be adjusted in `Program.cs`:
 
 ## Notes
 
-- The browser must be visible (non-headless) since you're using an existing Chrome instance
-- Rate limiting is built-in with delays between actions
-- If Twitter changes their UI, selectors may need updating
-- Press Ctrl+C to stop the tool at any time
+- The browser opens in non-headless mode so you can interact with login and observe the progress.
+- Rate limiting is built-in with delays between actions.
+- Your session is preserved in `.browser-profile/` (which is ignored by Git).
+- Press `Ctrl+C` to stop the tool at any time.
 
 ## License
 

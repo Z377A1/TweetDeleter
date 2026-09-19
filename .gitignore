@@ -594,3 +594,7 @@ FodyWeavers.xsd
 # Additional files built by Visual Studio
 
 # End of https://www.toptal.com/developers/gitignore/api/csharp,visualstudio,visualstudiocode
+
+# Playwright browser profile and auth storage
+.browser-profile/
+auth.json
